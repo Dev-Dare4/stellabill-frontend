@@ -10,6 +10,7 @@ import UsageThisPeriod from "../components/UsageThisPeriod";
 import ErrorState from "../components/ErrorState";
 import Tag from "../components/Tag";
 import AddTagPopover, { TagOption } from "../components/AddTagPopover";
+import { usePageTitle } from '../hooks/usePageTitle';
 import { useRefresh } from "../hooks/useRefresh";
 import { useFlip } from "../hooks/useFlip";
 import "./Subscriptions.css";
@@ -362,6 +363,7 @@ const INITIAL_DATA: SubscriptionWithIcon[] = [
 
 /* ─── Main component ─────────────────────────────────────────── */
 export default function Subscriptions() {
+  usePageTitle('Subscriptions');
 	const { t } = useTranslation();
 	const [data, setData] = useState<SubscriptionWithIcon[]>([]);
 	const [loading, setLoading] = useState(true);

@@ -6,6 +6,7 @@ import ApiKeysSettings from '../components/settings/ApiKeysSettings'
 import DensityPreview from '../components/settings/DensityPreview'
 import FamilyPlanSettings from '../components/settings/FamilyPlanSettings'
 import './Settings.css'
+import { usePageTitle } from '../hooks/usePageTitle'
 
 type SettingsTab = 'organization' | 'billing' | 'api-keys' | 'tags' | 'appearance' | 'family-plan'
 
@@ -93,6 +94,7 @@ const settingsSections: SettingsSection[] = [
 ]
 
 export default function Settings() {
+  usePageTitle('Settings')
   const [activeTab, setActiveTab] = useState<SettingsTab>('organization')
 
   const ActiveComponent = settingsSections.find((section) => section.id === activeTab)?.component

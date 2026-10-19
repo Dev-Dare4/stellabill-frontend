@@ -1,6 +1,7 @@
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useState, useMemo } from 'react';
 import { useCommandScope } from '../hooks/useCommandScope';
+import { usePageTitle } from '../hooks/usePageTitle';
 import type { CommandItem } from '../components/CommandPalette';
 import RecentPayments from '../components/RecentPayments';
 import UsageThisPeriod from '../components/UsageThisPeriod';
@@ -22,6 +23,7 @@ type SubscriptionStatus = 'active' | 'paused' | 'cancelled';
 const REACTIVATION_WINDOW_DAYS = 30;
 
 export default function SubscriptionDetail() {
+    usePageTitle('Subscription Details');
     const { id } = useParams();
 
     // ── Schedule-change preview state ─────────────────────────────────────────

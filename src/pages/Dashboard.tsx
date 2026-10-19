@@ -14,6 +14,7 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import { useState } from 'react';
+import { usePageTitle } from '../hooks/usePageTitle';
 import RevenueChart from '../components/RevenueChart';
 import DashboardCard from '../components/Dashboard/DashboardCard';
 import ActivityList, { ActivityType } from '../components/Dashboard/ActivityList';
@@ -65,6 +66,7 @@ const WIDGET_LABELS: Record<WidgetId, string> = {
 };
 
 export default function Dashboard() {
+  usePageTitle('Dashboard');
   const { t } = useTranslation();
   const summaryRegionId = useId();
 
