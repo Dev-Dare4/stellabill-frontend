@@ -1,8 +1,8 @@
-import { useRef, useState } from 'react'
-import { Key, Plus, Eye, EyeOff, Copy, RotateCcw, Trash2, AlertTriangle, Shield, Calendar, User } from 'lucide-react'
-import Modal from '../common/Modal'
+import { useState } from 'react'
+import { Key, Plus, Copy, RotateCcw, Trash2, AlertTriangle, Shield, Calendar, User, Check } from 'lucide-react'
+import { defaultGenerateApiKey, maskApiKey } from '../../utils/apiKey'
 
-interface ApiKey {
+export interface ApiKey {
   id: string
   name: string
   key: string
@@ -14,12 +14,20 @@ interface ApiKey {
   isActive: boolean
 }
 
-export default function ApiKeysSettings() {
+export interface ApiKeysSettingsProps {
+  generateApiKey?: () => string
+}
+
+const AVAILABLE_SCOPES = ['read', 'write', 'admin'] as const
+
+export default function ApiKeysSettings({
+  generateApiKey = defaultGenerateApiKey,
+}: ApiKeysSettingsProps = {}) {
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([
     {
       id: '1',
       name: 'Production API Key',
-      key: 'sk_live_51H2K3a...',
+      key: 'sk_live_••••••••••••••••3a8f',
       scopes: ['read', 'write', 'admin'],
       createdAt: '2024-01-15',
       createdBy: 'alice@example.com',
@@ -29,7 +37,7 @@ export default function ApiKeysSettings() {
     {
       id: '2',
       name: 'Development Key',
-      key: 'sk_test_51H2K3a...',
+      key: 'sk_test_••••••••••••••••5b2c',
       scopes: ['read', 'write'],
       createdAt: '2024-02-01',
       createdBy: 'bob@example.com',
@@ -40,40 +48,93 @@ export default function ApiKeysSettings() {
   ])
 
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [newKeyName, setNewKeyName] = useState('')
+  const [newKeyScopes, setNewKeyScopes] = useState<string[]>([])
+  const [newKeyExpiry, setNewKeyExpiry] = useState('')
+  const [formErrors, setFormErrors] = useState<{ name?: string; scopes?: string; expiry?: string }>({})
+
   const [showRevokeConfirmation, setShowRevokeConfirmation] = useState<string | null>(null)
   const [revokeConfirmationText, setRevokeConfirmationText] = useState('')
-  const [visibleKeys, setVisibleKeys] = useState<Set<string>>(new Set())
-  const [copyFeedback, setCopyFeedback] = useState<{ keyId: string; success: boolean } | null>(null)
-  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  useEffect(() => {
-    return () => {
-      if (copyTimerRef.current) clearTimeout(copyTimerRef.current)
+  const [showSecretModal, setShowSecretModal] = useState<{
+    title: string
+    keyName: string
+    secret: string
+  } | null>(null)
+  const [copiedSecret, setCopiedSecret] = useState(false)
+
+  const copyToClipboard = (text: string) => {
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(text)
     }
-  }, [])
-
-  const createTriggerRef = useRef<HTMLButtonElement>(null)
-  const revokeTriggerRefs = useRef<Map<string, HTMLButtonElement>>(new Map())
-  const createNameInputRef = useRef<HTMLInputElement>(null)
-
-  const toggleKeyVisibility = (keyId: string) => {
-    const newVisibleKeys = new Set(visibleKeys)
-    if (newVisibleKeys.has(keyId)) {
-      newVisibleKeys.delete(keyId)
-    } else {
-      newVisibleKeys.add(keyId)
-    }
-    setVisibleKeys(newVisibleKeys)
   }
 
-  const handleCopyKey = async (keyId: string, text: string) => {
-    if (copyTimerRef.current) clearTimeout(copyTimerRef.current)
-    const success = await copyToClipboard(text)
-    setCopyFeedback({ keyId, success })
-    copyTimerRef.current = setTimeout(() => {
-      setCopyFeedback(null)
-      copyTimerRef.current = null
-    }, 2000)
+  const resetCreateForm = () => {
+    setNewKeyName('')
+    setNewKeyScopes([])
+    setNewKeyExpiry('')
+    setFormErrors({})
+  }
+
+  const handleCloseCreateModal = () => {
+    resetCreateForm()
+    setShowCreateModal(false)
+  }
+
+  const handleCreateKey = (e?: React.FormEvent) => {
+    if (e) e.preventDefault()
+
+    const errors: { name?: string; scopes?: string; expiry?: string } = {}
+    if (!newKeyName.trim()) {
+      errors.name = 'Key name is required'
+    }
+    if (newKeyScopes.length === 0) {
+      errors.scopes = 'At least one scope must be selected'
+    }
+    if (newKeyExpiry) {
+      const parts = newKeyExpiry.split('-')
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      if (parts.length === 3) {
+        const expDate = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10))
+        if (isNaN(expDate.getTime()) || expDate <= today) {
+          errors.expiry = 'Expiry date must be in the future'
+        }
+      } else {
+        const expDate = new Date(newKeyExpiry)
+        if (isNaN(expDate.getTime()) || expDate <= today) {
+          errors.expiry = 'Expiry date must be in the future'
+        }
+      }
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors)
+      return
+    }
+
+    const secret = generateApiKey()
+    const masked = maskApiKey(secret)
+
+    const newKey: ApiKey = {
+      id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+      name: newKeyName.trim(),
+      key: masked,
+      scopes: [...newKeyScopes],
+      createdAt: new Date().toISOString().split('T')[0],
+      createdBy: 'alice@example.com',
+      expiresAt: newKeyExpiry || undefined,
+      isActive: true,
+    }
+
+    setApiKeys((prev) => [newKey, ...prev])
+    handleCloseCreateModal()
+
+    setShowSecretModal({
+      title: 'API Key Created',
+      keyName: newKey.name,
+      secret,
+    })
   }
 
   const handleRevokeKey = (keyId: string) => {
@@ -83,12 +144,18 @@ export default function ApiKeysSettings() {
   }
 
   const handleRevokeAndRotateKey = (keyId: string) => {
+    const keyToRotate = apiKeys.find((k) => k.id === keyId)
+    if (!keyToRotate) return
+
+    const newSecret = generateApiKey()
+    const masked = maskApiKey(newSecret)
+
     setApiKeys((prev) =>
       prev.map((k) =>
         k.id === keyId
           ? {
               ...k,
-              key: `sk_new_${Math.random().toString(36).substring(7)}...`,
+              key: masked,
               createdAt: new Date().toISOString().split('T')[0],
               lastUsed: undefined,
             }
@@ -97,12 +164,18 @@ export default function ApiKeysSettings() {
     )
     setShowRevokeConfirmation(null)
     setRevokeConfirmationText('')
+
+    setShowSecretModal({
+      title: 'API Key Rotated',
+      keyName: keyToRotate.name,
+      secret: newSecret,
+    })
   }
 
-  const activeKeysCount = apiKeys.filter(k => k.isActive).length;
-  const keyToRevoke = apiKeys.find(k => k.id === showRevokeConfirmation);
-  const isOnlyKey = activeKeysCount === 1 && keyToRevoke?.isActive;
-  const isRevokeConfirmed = revokeConfirmationText.trim() === keyToRevoke?.name;
+  const activeKeysCount = apiKeys.filter((k) => k.isActive).length
+  const keyToRevoke = apiKeys.find((k) => k.id === showRevokeConfirmation)
+  const isOnlyKey = activeKeysCount === 1 && keyToRevoke?.isActive
+  const isRevokeConfirmed = revokeConfirmationText.trim() === keyToRevoke?.name
 
   return (
     <div>
@@ -166,8 +239,10 @@ export default function ApiKeysSettings() {
           </span>
         </div>
         <button
-          ref={createTriggerRef}
-          onClick={() => setShowCreateModal(true)}
+          onClick={() => {
+            resetCreateForm()
+            setShowCreateModal(true)
+          }}
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -186,7 +261,7 @@ export default function ApiKeysSettings() {
         </button>
       </div>
 
-      {/* API Keys List */}
+      {/* API Keys Table */}
       <div style={{ background: '#0a0a0a', borderRadius: '6px', border: '1px solid #2d2d44', overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '800px' }}>
           <thead>
@@ -228,13 +303,13 @@ export default function ApiKeysSettings() {
                     background: '#1a1a1a',
                     padding: '0.375rem 0.5rem',
                     borderRadius: '4px',
-                    display: 'inline-block'
+                    display: 'inline-block',
                   }}>
-                    {visibleKeys.has(key.id) ? key.key : '•'.repeat(16) + key.key.slice(-4)}
+                    {key.key}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.5rem' }}>
                     <button
-                      onClick={() => toggleKeyVisibility(key.id)}
+                      onClick={() => copyToClipboard(key.key)}
                       style={{
                         background: 'transparent',
                         border: 'none',
@@ -244,24 +319,7 @@ export default function ApiKeysSettings() {
                         padding: 0,
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '0.25rem'
-                      }}
-                    >
-                      {visibleKeys.has(key.id) ? <EyeOff size={12} /> : <Eye size={12} />}
-                      {visibleKeys.has(key.id) ? 'Hide' : 'Show'}
-                    </button>
-                    <button
-                      onClick={() => handleCopyKey(key.id, key.key)}
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: '#67d5f0',
-                        fontSize: '0.75rem',
-                        cursor: 'pointer',
-                        padding: 0,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.25rem'
+                        gap: '0.25rem',
                       }}
                     >
                       <Copy size={12} />
@@ -354,68 +412,330 @@ export default function ApiKeysSettings() {
       </div>
 
       {/* Create API Key Modal */}
-      <Modal
-        isOpen={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
-        title="Create API Key"
-        description="Create a new API key for your organization."
-        initialFocusRef={createNameInputRef}
-        restoreFocusRef={createTriggerRef}
-      >
-        <div>
-          <label htmlFor="create-key-name-input" style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500, color: '#e2e8f0' }}>
-            Key name
-          </label>
-          <input
-            id="create-key-name-input"
-            ref={createNameInputRef}
-            type="text"
-            dir="auto"
+      {showCreateModal && (
+        <div
+          role="dialog"
+          aria-labelledby="create-modal-title"
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.8)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+          }}
+        >
+          <div
             style={{
-              width: '100%',
-              padding: '0.75rem',
-              borderRadius: '4px',
+              background: '#1a1a2e',
+              borderRadius: '8px',
+              padding: '2rem',
+              maxWidth: '520px',
+              width: '90%',
               border: '1px solid #2d2d44',
-              background: '#0a0a0a',
-              color: '#e2e8f0',
-              fontSize: '0.875rem',
-              boxSizing: 'border-box',
             }}
-          />
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.5rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
-              <button
-                onClick={() => setShowCreateModal(false)}
-                style={{
-                  padding: '0.75rem 1.5rem',
-                  borderRadius: '6px',
-                  border: '1px solid #2d2d44',
-                  background: 'transparent',
-                  color: '#94a3b8',
-                  fontSize: '0.875rem',
-                  cursor: 'pointer',
-                }}
+          >
+            <h3
+              id="create-modal-title"
+              style={{ margin: '0 0 1.5rem', fontSize: '1.25rem', fontWeight: 600, color: '#e2e8f0' }}
+            >
+              Create API Key
+            </h3>
+
+            <form onSubmit={handleCreateKey} noValidate>
+              {/* Key Name Input */}
+              <div style={{ marginBottom: '1.25rem' }}>
+                <label
+                  htmlFor="create-key-name"
+                  style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', fontWeight: 500, color: '#e2e8f0' }}
+                >
+                  Key Name <span style={{ color: '#ef4444' }}>*</span>
+                </label>
+                <input
+                  id="create-key-name"
+                  type="text"
+                  value={newKeyName}
+                  onChange={(e) => {
+                    setNewKeyName(e.target.value)
+                    if (formErrors.name) {
+                      setFormErrors((prev) => ({ ...prev, name: undefined }))
+                    }
+                  }}
+                  placeholder="e.g. Production Backend"
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem',
+                    borderRadius: '4px',
+                    border: '1px solid ' + (formErrors.name ? '#ef4444' : '#2d2d44'),
+                    background: '#0a0a0a',
+                    color: '#e2e8f0',
+                    fontSize: '0.875rem',
+                    boxSizing: 'border-box',
+                  }}
+                />
+                {formErrors.name && (
+                  <div role="alert" style={{ color: '#ef4444', fontSize: '0.75rem', marginTop: '0.375rem' }}>
+                    {formErrors.name}
+                  </div>
+                )}
+              </div>
+
+              {/* Scopes Checkboxes */}
+              <div style={{ marginBottom: '1.25rem' }}>
+                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', fontWeight: 500, color: '#e2e8f0' }}>
+                  Scopes <span style={{ color: '#ef4444' }}>*</span>
+                </label>
+                <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
+                  {AVAILABLE_SCOPES.map((scope) => (
+                    <label
+                      key={scope}
+                      htmlFor={'scope-' + scope}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        color: '#e2e8f0',
+                        fontSize: '0.875rem',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <input
+                        id={'scope-' + scope}
+                        type="checkbox"
+                        checked={newKeyScopes.includes(scope)}
+                        onChange={(e) => {
+                          const checked = e.target.checked
+                          setNewKeyScopes((prev) =>
+                            checked ? [...prev, scope] : prev.filter((s) => s !== scope)
+                          )
+                          if (formErrors.scopes) {
+                            setFormErrors((prev) => ({ ...prev, scopes: undefined }))
+                          }
+                        }}
+                        style={{ cursor: 'pointer' }}
+                      />
+                      <span style={{ textTransform: 'capitalize' }}>{scope}</span>
+                    </label>
+                  ))}
+                </div>
+                {formErrors.scopes && (
+                  <div role="alert" style={{ color: '#ef4444', fontSize: '0.75rem', marginTop: '0.375rem' }}>
+                    {formErrors.scopes}
+                  </div>
+                )}
+              </div>
+
+              {/* Expiry Date (Optional) */}
+              <div style={{ marginBottom: '1.5rem' }}>
+                <label
+                  htmlFor="create-key-expiry"
+                  style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', fontWeight: 500, color: '#e2e8f0' }}
+                >
+                  Expiry Date (optional)
+                </label>
+                <input
+                  id="create-key-expiry"
+                  type="date"
+                  value={newKeyExpiry}
+                  onChange={(e) => {
+                    setNewKeyExpiry(e.target.value)
+                    if (formErrors.expiry) {
+                      setFormErrors((prev) => ({ ...prev, expiry: undefined }))
+                    }
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem',
+                    borderRadius: '4px',
+                    border: '1px solid ' + (formErrors.expiry ? '#ef4444' : '#2d2d44'),
+                    background: '#0a0a0a',
+                    color: '#e2e8f0',
+                    fontSize: '0.875rem',
+                    boxSizing: 'border-box',
+                  }}
+                />
+                {formErrors.expiry && (
+                  <div role="alert" style={{ color: '#ef4444', fontSize: '0.75rem', marginTop: '0.375rem' }}>
+                    {formErrors.expiry}
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Actions */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+                <button
+                  type="button"
+                  onClick={handleCloseCreateModal}
+                  style={{
+                    padding: '0.75rem 1.5rem',
+                    borderRadius: '6px',
+                    border: '1px solid #2d2d44',
+                    background: 'transparent',
+                    color: '#94a3b8',
+                    fontSize: '0.875rem',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    padding: '0.75rem 1.5rem',
+                    borderRadius: '6px',
+                    border: 'none',
+                    background: 'linear-gradient(135deg, #67d5f0, #5ce0b8)',
+                    color: '#0f172a',
+                    fontSize: '0.875rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Key size={16} />
+                  Create Key
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Show-Once Secret Key Panel */}
+      {showSecretModal && (
+        <div
+          role="dialog"
+          aria-labelledby="secret-modal-title"
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.8)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+          }}
+        >
+          <div
+            style={{
+              background: '#1a1a2e',
+              borderRadius: '8px',
+              padding: '2rem',
+              maxWidth: '550px',
+              width: '90%',
+              border: '1px solid #2d2d44',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+              <Shield size={24} style={{ color: '#10b981' }} />
+              <h3 id="secret-modal-title" style={{ margin: 0, fontSize: '1.25rem', fontWeight: 600, color: '#e2e8f0' }}>
+                {showSecretModal.title}
+              </h3>
+            </div>
+
+            {/* Prominent warning notice */}
+            <div
+              style={{
+                background: '#241a08',
+                border: '1px solid #f59e0b',
+                borderRadius: '6px',
+                padding: '0.875rem 1rem',
+                marginBottom: '1.25rem',
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: '0.75rem',
+              }}
+            >
+              <AlertTriangle size={18} style={{ color: '#f59e0b', marginTop: '2px', flexShrink: 0 }} />
+              <div style={{ fontSize: '0.875rem', color: '#fef3c7', lineHeight: '1.4' }}>
+                <strong style={{ display: 'block', marginBottom: '0.25rem', color: '#fbbf24' }}>
+                  {"Copy now — you won't see it again"}
+                </strong>
+                {"Please copy and store this API key in a secure location. For your security, this full key will not be shown again."}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '1.5rem' }}>
+              <label
+                htmlFor="generated-secret-key"
+                style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', fontWeight: 500, color: '#94a3b8' }}
               >
-                Cancel
-              </button>
+                Secret Key for <strong>{showSecretModal.keyName}</strong>
+              </label>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <input
+                  id="generated-secret-key"
+                  type="text"
+                  readOnly
+                  value={showSecretModal.secret}
+                  style={{
+                    flex: 1,
+                    padding: '0.75rem',
+                    borderRadius: '4px',
+                    border: '1px solid #2d2d44',
+                    background: '#0a0a0a',
+                    color: '#67d5f0',
+                    fontFamily: 'monospace',
+                    fontSize: '0.875rem',
+                    boxSizing: 'border-box',
+                  }}
+                />
+                <button
+                  type="button"
+                  aria-label="Copy secret key"
+                  onClick={() => {
+                    copyToClipboard(showSecretModal.secret)
+                    setCopiedSecret(true)
+                    setTimeout(() => setCopiedSecret(false), 2000)
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    padding: '0.75rem 1rem',
+                    borderRadius: '4px',
+                    border: '1px solid #2d2d44',
+                    background: '#1e293b',
+                    color: '#e2e8f0',
+                    fontSize: '0.875rem',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {copiedSecret ? <Check size={16} style={{ color: '#10b981' }} /> : <Copy size={16} />}
+                  {copiedSecret ? 'Copied!' : 'Copy Key'}
+                </button>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
               <button
-                onClick={() => setShowCreateModal(false)}
+                type="button"
+                onClick={() => {
+                  setShowSecretModal(null)
+                  setCopiedSecret(false)
+                }}
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.5rem',
                   padding: '0.75rem 1.5rem',
                   borderRadius: '6px',
                   border: 'none',
                   background: 'linear-gradient(135deg, #67d5f0, #5ce0b8)',
-                  color: '#fff',
+                  color: '#0f172a',
                   fontSize: '0.875rem',
                   fontWeight: 600,
                   cursor: 'pointer',
                 }}
               >
-                <Key size={16} />
-                Create Key
+                Done
               </button>
             </div>
           </div>
@@ -423,24 +743,46 @@ export default function ApiKeysSettings() {
       </Modal>
 
       {/* Revoke Confirmation Modal */}
-      <Modal
-        isOpen={showRevokeConfirmation !== null && !!keyToRevoke}
-        onClose={() => {
-          setShowRevokeConfirmation(null)
-          setRevokeConfirmationText('')
-        }}
-        title="Revoke API Key"
-        description="Confirm revocation of this API key."
-        initialFocusRef={revokeConfirmInputRef}
-        restoreFocusRef={showRevokeConfirmation ? revokeTriggerRefs.current.get(showRevokeConfirmation) : null}
-      >
-        {keyToRevoke && (
-          <div>
-            <div style={{ margin: '0 0 1.5rem', color: '#94a3b8', lineHeight: '1.5', fontSize: '0.875rem' }}>
+      {showRevokeConfirmation && keyToRevoke && (
+        <div
+          role="dialog"
+          aria-labelledby="revoke-modal-title"
+          aria-describedby="revoke-modal-desc"
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.8)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+          }}
+        >
+          <div
+            style={{
+              background: '#1a1a2e',
+              borderRadius: '8px',
+              padding: '2rem',
+              maxWidth: '500px',
+              width: '90%',
+              border: '1px solid #2d2d44',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+              <AlertTriangle size={24} style={{ color: '#ef4444' }} />
+              <h3 id="revoke-modal-title" style={{ margin: 0, fontSize: '1.25rem', fontWeight: 600, color: '#e2e8f0' }}>
+                Revoke API Key
+              </h3>
+            </div>
+
+            <div id="revoke-modal-desc" style={{ margin: '0 0 1.5rem', color: '#94a3b8', lineHeight: '1.5', fontSize: '0.875rem' }}>
               <p style={{ margin: '0 0 1rem' }}>
                 Are you sure you want to revoke <strong>{keyToRevoke.name}</strong>? This action cannot be undone.
               </p>
-              
+
               <div style={{ background: '#2d1b1e', border: '1px solid #ef4444', borderRadius: '4px', padding: '0.75rem', marginBottom: '1rem' }}>
                 <strong style={{ color: '#ef4444', display: 'block', marginBottom: '0.5rem' }}>Consequences:</strong>
                 <ul style={{ margin: 0, paddingLeft: '1.25rem', color: '#fca5a5' }}>
@@ -481,8 +823,8 @@ export default function ApiKeysSettings() {
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', flexWrap: 'wrap' }}>
               <button
                 onClick={() => {
-                  setShowRevokeConfirmation(null);
-                  setRevokeConfirmationText('');
+                  setShowRevokeConfirmation(null)
+                  setRevokeConfirmationText('')
                 }}
                 style={{
                   padding: '0.75rem 1.5rem',
@@ -496,7 +838,7 @@ export default function ApiKeysSettings() {
               >
                 Cancel
               </button>
-              
+
               <button
                 disabled={!isRevokeConfirmed}
                 onClick={() => handleRevokeAndRotateKey(keyToRevoke.id)}
@@ -517,7 +859,7 @@ export default function ApiKeysSettings() {
                 <RotateCcw size={16} />
                 Revoke & Rotate
               </button>
-              
+
               <button
                 disabled={!isRevokeConfirmed}
                 onClick={() => handleRevokeKey(keyToRevoke.id)}
