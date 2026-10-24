@@ -6,8 +6,6 @@ dist/
 *.tsbuildinfo
 
 # Environment
-.env
-.env.local
 .env.*.local
 
 # Logs
@@ -19,7 +17,6 @@ pnpm-debug.log*
 
 # Editor / IDE
 .idea/
-.vscode/
 *.swp
 *.swo
 *~
@@ -42,3 +39,4 @@ coverage/
 storybook-static
 branch_structure.json
 .vercel
+config.bat
